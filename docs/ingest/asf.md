@@ -90,13 +90,13 @@ the destination before removing that lock.
 These example bounds cover a study area around Subic Bay. They are supplied as
 inputs, not application defaults; replace them to target another area.
 
-First, preview matching scenes for 2025 without credentials or downloads:
+First, preview matching scenes for January 2026 without credentials or downloads:
 
 ```bash
 python -m dredge --module ingest --mode asf --action get \
   --bbox=120.14,14.72,120.33,14.90 \
-  --start-date 2025-01-01 \
-  --end-date 2025-12-31 \
+  --start-date 2026-01-01 \
+  --end-date 2026-01-31 \
   --acquisition-mode IW \
   --max-results 10 \
   --dry-run
@@ -110,11 +110,11 @@ mkdir -p artifacts
 
 python -m dredge --module ingest --mode asf --action get \
   --bbox=120.14,14.72,120.33,14.90 \
-  --start-date 2025-01-01 \
-  --end-date 2025-12-31 \
+  --start-date 2026-01-01 \
+  --end-date 2026-01-31 \
   --acquisition-mode IW \
   --max-results 10 \
-  --output artifacts/subic-bay-2025
+  --output artifacts/subic-bay-2026-01
 ```
 
 The preview enumerates all matching catalog metadata and reports the ten-scene
@@ -156,6 +156,64 @@ RTC defaults to 30 m linear power, gamma0, with no speckle filter. Its resolutio
 separate from target-grid spacing; resampling to finer pixels does not improve the
 sensor's spatial resolution. Dredge does not implement a local GRD calibration or
 terrain-correction engine. Reprojection of raw GRD is not SAR geocoding.
+
+## Example: Subic Bay 640×640 tiles for January 2026
+
+To turn the downloaded SAR products into georeferenced tiles, save the following
+as `processing.yaml` in the repository root. EPSG:32651 is chosen for this example
+area only; choose a suitable projected CRS when using different bounds.
+
+```yaml
+version: 1
+
+rtc:
+  enabled: true
+  resolution: 30
+
+reference_grid:
+  crs: EPSG:32651
+  resolution_m: 30
+  resampling: bilinear
+  nodata: -9999
+
+tiling:
+  enabled: true
+  tile_size: 640
+  overlap: 0.20
+  preserve_georeferencing: true
+  include_empty_tiles: true
+```
+
+With `EARTHDATA_USERNAME` and `EARTHDATA_PASSWORD` configured, run:
+
+```bash
+mkdir -p artifacts
+
+python -m dredge --module ingest --mode asf --action get \
+  --bbox=120.14,14.72,120.33,14.90 \
+  --start-date 2026-01-01 \
+  --end-date 2026-01-31 \
+  --acquisition-mode IW \
+  --max-results 10 \
+  --output artifacts/subic-bay-2026-01 \
+  --processing-config processing.yaml \
+  --allow-hyp3-submit
+```
+
+This explicitly authorizes HyP3 RTC jobs for up to ten selected scenes, aligns the
+processed rasters to the reference grid, and writes 640×640-pixel GeoTIFFs under
+`artifacts/subic-bay-2026-01/tiles/`. Verified raw products from the preceding
+download example are reused. Processing requires HyP3 access and available service
+quota; the catalog-only `--dry-run` does not submit jobs or generate tiles.
+
+Tiles overlap by 20%, preserve georeferencing, and include empty tiles. Edge tiles
+are padded with NoData. At 30 m pixel spacing, a full tile spans 19.2 × 19.2 km;
+the valid-data footprint may be smaller. Outputs retain linear-power backscatter
+because this example does not request unit conversion.
+
+If the command times out while jobs are pending, rerun it without
+`--allow-hyp3-submit` to collect existing jobs. Use a new output directory if you
+change the area or the persisted reference-grid settings.
 
 ## Exact reference grids and generic tiling
 
