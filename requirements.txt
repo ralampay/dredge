@@ -1,0 +1,4 @@
+# Tables, styled output, prompts, and progress displays.
+rich
+# Read .env configuration.
+python-dotenv

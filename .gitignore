@@ -1,0 +1,51 @@
+# Local configuration and credentials; keep the template tracked.
+.env
+.env.*
+!.env.dist
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.venv-*/
+.venv.*/
+
+# Python bytecode and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Test, coverage, lint, and type-check caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytype/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Runtime logs
+*.log
+
+# Editor-local settings and temporary files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Operating-system metadata
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
