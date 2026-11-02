@@ -21,3 +21,6 @@ shapely>=2,<3
 pyproj>=3.4,<4
 rasterio>=1.4,<2
 numpy>=1.24
+
+# SDK for explicitly authorized HyP3 SAR terrain correction.
+hyp3-sdk>=7,<8

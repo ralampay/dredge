@@ -7,7 +7,7 @@ def create_client(settings):
     try:
         import hyp3_sdk
     except ImportError as exc:
-        raise UserError('RTC requires optional dependencies: pip install -r requirements-hyp3.txt') from exc
+        raise UserError('RTC requires the project dependencies: python -m pip install -r requirements.txt') from exc
     from hyp3_sdk.exceptions import AuthenticationError as SDKAuthenticationError, HyP3SDKError
     from requests.exceptions import RequestException
     try:

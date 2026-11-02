@@ -44,7 +44,8 @@ footprints are unknown, never presumed full coverage.
 All catalog pages are still enumerated for exact unique counts and summaries;
 large searches may take time and memory. Antimeridian searches are deduplicated.
 Date/product/orbit summaries cover the entire catalog result; volume and coverage
-summaries cover selected scenes. Known bytes exclude scenes with missing size
+summaries cover selected scenes. Download sizes use readable decimal units such as
+MB and GB; result data retains exact byte counts. Known sizes exclude scenes with missing size
 metadata and do not estimate uncompressed or derived size. Incomplete catalog
 searches fail explicitly instead of reporting misleading totals.
 
@@ -84,9 +85,46 @@ Cancellation preserves already published artifacts for reruns. A process killed
 without cleanup may leave a sibling `.imagery.lock`; verify that no process owns
 the destination before removing that lock.
 
+## Example: Subic Bay preview and download
+
+These example bounds cover a study area around Subic Bay. They are supplied as
+inputs, not application defaults; replace them to target another area.
+
+First, preview matching scenes for 2025 without credentials or downloads:
+
+```bash
+python -m dredge --module ingest --mode asf --action get \
+  --bbox=120.14,14.72,120.33,14.90 \
+  --start-date 2025-01-01 \
+  --end-date 2025-12-31 \
+  --acquisition-mode IW \
+  --max-results 10 \
+  --dry-run
+```
+
+To fetch up to ten scenes using the same filters, set `EARTHDATA_USERNAME` and
+`EARTHDATA_PASSWORD` in your shell or `.env`, then run:
+
+```bash
+mkdir -p artifacts
+
+python -m dredge --module ingest --mode asf --action get \
+  --bbox=120.14,14.72,120.33,14.90 \
+  --start-date 2025-01-01 \
+  --end-date 2025-12-31 \
+  --acquisition-mode IW \
+  --max-results 10 \
+  --output artifacts/subic-bay-2025
+```
+
+The preview enumerates all matching catalog metadata and reports the ten-scene
+selection limit. The download command fetches raw GRD ZIP products and writes a
+manifest; it does not submit HyP3 jobs or generate processed TIFFs. A rerun reuses
+verified downloads in the same managed output directory.
+
 ## Optional HyP3 RTC and raster pipeline
 
-Install `pip install -r requirements-hyp3.txt`. Copy
+HyP3 dependencies are included in `requirements.txt`; RTC processing remains opt-in. Copy
 [`examples/asf/processing.yaml`](../../examples/asf/processing.yaml), replace its CRS
 placeholder with a suitable metre-based projected CRS, and choose resolution and
 processing settings. The version-1 file accepts only `rtc`, `reference_grid`,
