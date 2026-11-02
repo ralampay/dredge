@@ -1,5 +1,8 @@
 # Dredge architecture
 
+For CLI usage, see the [module guides](README.md#modules). For repository layout
+and extension instructions, see [development and extension](docs/development.md).
+
 Dredge uses the same responsibility boundaries as MLX: declarative CLI options,
 lazy routing, typed inputs, thin composition runners, command workflows, isolated
 provider integration, and separate presentation. Dredge adds a module dimension
