@@ -39,3 +39,15 @@ class S3DatasetAdapter:
         segments = obj.key.split('/')[:-1]
         return [{**p, 'value': segments[p['segment']].split('=', 1)[1] if p['layout'] == 'hive'
                  else segments[p['segment']]} for p in self.selector['partitions']]
+
+
+class S3ObjectSelection:
+    """List a literal prefix and match Hive directories without a schema."""
+    def __init__(self, source, prefix, partitions):
+        self.source, self.prefix, self.partitions = source, prefix, partitions
+
+    def matches(self, obj):
+        return obj.key.startswith(self.prefix) and not obj.key.endswith('/') and self.partitions.matches(obj.key)
+
+    def objects(self):
+        return (obj for obj in self.source.objects(self.prefix) if self.matches(obj))

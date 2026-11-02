@@ -213,7 +213,7 @@ class PreviewTests(unittest.TestCase):
                 self.assertEqual(present.call_args.args[0].document['objects'], 1)
             self.assertFalse(output.parent.exists())
             self.assertEqual(source.reads, [])
-            for extra in (['--prefix', 'x'], ['--sample-files', '1'], ['--batch-rows', '0']):
+            for extra in (['--sample-files', '1'], ['--batch-rows', '0']):
                 with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                     main(args + extra)
                 self.assertEqual(error.exception.code, 2)

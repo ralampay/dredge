@@ -184,12 +184,18 @@ def invalid_constant():
 def _open_records(raw, fmt, compression, options, metadata=None):
     """Yield records with identical parser semantics for discovery and ingestion."""
     with ExitStack() as stack:
-        buffered = stack.enter_context(io.BufferedReader(raw, buffer_size=getattr(options, 'read_buffer_bytes', 65536)))
         if fmt == 'parquet':
             import pyarrow.parquet as pq
-            file = stack.enter_context(pq.ParquetFile(buffered))
-            yield (record for batch in file.iter_batches(batch_size=1000) for record in batch.to_pylist())
+            file = stack.enter_context(pq.ParquetFile(stack.enter_context(raw)))
+            predicate = getattr(options, 'parquet_predicate', None)
+            groups = None
+            if predicate is not None:
+                from .parquet_filter import select_row_groups
+                groups = list(select_row_groups(file, predicate).indices)
+            yield (record for batch in file.iter_batches(batch_size=1000, row_groups=groups)
+                   for record in batch.to_pylist())
             return
+        buffered = stack.enter_context(io.BufferedReader(raw, buffer_size=getattr(options, 'read_buffer_bytes', 65536)))
         binary = stack.enter_context(gzip.GzipFile(fileobj=buffered)) if compression == 'gzip' else buffered
         expanded = ExpandedReader(binary, options.sample_bytes)
         decoded = stack.enter_context(io.BufferedReader(expanded))

@@ -25,7 +25,7 @@ def field_lines(node, prefix=''):
             yield from field_lines(field['items'], name + '[].')
 
 
-def write_notebook(path, dataset, schema, partitions):
+def write_notebook(path, dataset, schema, partitions, filter_plan=None):
     from ...formats.schema import arrow_schema
     heading = dataset['name'].replace('<', '&lt;').replace('>', '&gt;')
     markdown = f'# Dataset: {heading}\n\nDataset ID: `{dataset["id"]}`\n\n'
@@ -45,6 +45,8 @@ def write_notebook(path, dataset, schema, partitions):
                      'Decode a non-null cell with `json.loads(value)`. For example: '
                      '`df[\"column\"].map(lambda value: json.loads(value) if pd.notna(value) else None)` '
                      '(after `import json`). Empty arrays are stored as `[]`, not null.\n')
+    if filter_plan is not None:
+        markdown += '\n\nIngestion filter (start inclusive, end exclusive):\n\n```json\n' + json.dumps(filter_plan, indent=2) + '\n```\n'
     code = 'import pandas as pd\n\ndf = pd.read_parquet("data", engine="pyarrow")\ndf.head()'
     notebook = {'nbformat': 4, 'nbformat_minor': 5,
                 'metadata': {'kernelspec': {'display_name': 'Python 3', 'language': 'python', 'name': 'python3'},

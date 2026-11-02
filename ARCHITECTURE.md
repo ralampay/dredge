@@ -230,3 +230,37 @@ requirements. Baselines, fingerprints, schema comparison, and mandatory bounded
 source validation continue to protect the resolved artifact. Renderers and
 notebooks expose JSON encoding explicitly; no provider-specific fallback logic
 lives in runners or writers.
+
+## Time-filtered ingestion plans
+
+Ingestion's `plan` action either inspects schema capabilities offline or runs
+`PlanIngestion.execute()` with an injected source and selector. `filter_plan` owns
+the version-1 YAML contract, schema/selector bindings, and atomic publication;
+`time_filters` owns explicit temporal predicates and the provider-neutral
+`FilteredSelection` decorator. `get --plan` refreshes inventory and reuses these
+predicates. The runner only composes commands and presentation.
+
+`formats.parquet_filter` selects conservative row groups from native temporal
+statistics. Planning and streaming reads use the same function; record predicates
+remain authoritative. Parquet range reads avoid generic stream buffering so
+excluded column chunks are not prefetched. Record parsing, validation, writing,
+and existing no-plan workflows retain their separate responsibilities. Plans do
+not equate partition dates with event dates or imply a source snapshot.
+
+## Schema-independent source plans
+
+Version-2 source plans describe literal prefixes and Hive partition predicates;
+they have no schema dependency. `core.partitioning.HiveFilter` handles literal
+key/value matching and calendar ranges. `modes.s3.datasets.S3ObjectSelection`
+passes the literal prefix to S3 and filters directory segments without reading
+contents. Version-1 schema-bound time plans remain supported; `plan_io` owns
+version dispatch and atomic persistence for both contracts.
+
+`PreviewSourceSelection` streams selected objects and optionally checks schema
+assignments. `IngestSelectedObjects` rejects unmatched, ambiguous, or blocked
+assignments before handing intersected selectors to `IngestDatasets`. Assignment
+checks repeat during streaming materialization to catch newly unmatched objects.
+Only matching datasets are written; empty selections produce an empty collection.
+The writer receives the source plan as provenance, with no new parsing responsibility.
+Source-plan execution accepts a newly generated schema without changing the plan;
+compatibility is checked against that schema at execution time.

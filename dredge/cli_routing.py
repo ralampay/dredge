@@ -29,7 +29,7 @@ ROUTES = (
                     ".modes.s3.cli_options:validate_options"),
     ),
     RouteDescriptor(
-        module="ingest", mode="s3", actions=("get",),
+        module="ingest", mode="s3", actions=("get", "plan"),
         runner=".modules.ingest.runner:run_ingestion",
         option_inventories=(
             ("Output", ".core.output_options:OPTIONS"),

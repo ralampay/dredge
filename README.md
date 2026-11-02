@@ -508,16 +508,17 @@ neither supplies one. Credentials are resolved through the selected profile.
 
 | Option | Default / meaning |
 | --- | --- |
-| `--schema` | Required discovery YAML (version 2/3) or resolved YAML (version 4). |
-| `--output` | Required new local dataset collection directory. |
+| `--schema` | Required for actual ingestion; optional for prefix/partition planning and dry-run. |
+| `--output` | Required new local dataset collection directory for downloads; optional for dry-run. |
 | `--dataset` | Repeatable dataset ID; otherwise ingest all datasets in the schema. |
 | `--dry-run` | List matching object counts, stored bytes, largest objects, and known blockers. |
 | `--batch-rows` | 10,000 records per Arrow write batch. |
 | `--batch-bytes` | 16,777,216 estimated Python record-payload bytes per batch. |
 | `--file-bytes` | 134,217,728 uncompressed Arrow bytes per Parquet shard, approximately. |
 
-Dry-run only lists object metadata; it makes no object-content requests and writes
-no files, including notebooks. It can estimate volume for a blocked schema and
+Ordinary dry-run only lists object metadata; it makes no object-content requests and writes
+no files, including notebooks. Version-1 time plans with explicit Parquet metadata inspection
+can read footers during dry-run. It can estimate volume for a blocked schema and
 returns 1 when selected datasets are blocked. Malformed schemas and bucket
 mismatches fail before listing. Stored source size includes compression and is
 not a prediction of peak memory, Parquet output size, or exact network transfer.
@@ -525,7 +526,8 @@ Listings make AWS requests, and a later run may see different objects.
 
 Actual ingestion reads **all matching objects and records**, not just discovery
 samples. Source filters, grouping, and parser settings come from the contract;
-`--prefix` and discovery sampling flags cannot override them. Blocked schemas,
+Prefix/partition selection can narrow these selectors but cannot override their contracts.
+Discovery sampling flags do not apply to ingestion. Blocked matching schemas,
 unknown fields, invalid nulls/types, conversion overflow, and changed or unreadable
 objects fail the run. Select specific ready datasets with `--dataset` if other
 datasets remain blocked. Output is staged beside the destination, published only
@@ -808,3 +810,173 @@ python -m unittest discover -s tests -v
 ```
 
 Tests use temporary configuration files and do not depend on your local `.env`.
+
+## Plan by prefix and Hive partitions (no schema required)
+
+Object selection and sizing use S3 listings and `key=value` directory segments.
+No schema, record parsing, or content downloads are required. A literal prefix
+can select a complete directory directly:
+
+```bash
+python -m dredge --module ingest --mode s3 --action get \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --prefix json/year=2026/month=10/day=22/ --dry-run
+```
+
+Or save a reusable source plan using partition predicates:
+
+```bash
+python -m dredge --module ingest --mode s3 --action plan \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --prefix json/ --partition year=2026 --partition month=10 \
+  --output artifacts/october-source.plan.yml
+```
+
+Omit `--output` to display an estimate without saving a plan. The same selection
+flags work directly on `get --dry-run`, and on `get` with a schema and output.
+
+- Prefixes are literal and are passed to the S3 listing API. Use `json/` if you
+  do not also want `json-backup/`. No slash is added automatically. Without a
+  prefix, source planning lists the whole bucket.
+- Different `--partition` keys combine with AND. Repeated values for one key
+  combine with OR: `--partition month=01 --partition month=02` selects either.
+- Values are exact strings: `month=01` differs from `month=1`. Predicates match
+  whole directory segments regardless of their order, splitting at the first `=`.
+  Missing filtered keys do not match; duplicate filtered keys fail as ambiguous.
+- Predicates filter listings locally; they do not invent directory order or
+  automatically generate narrower S3 prefixes. Supply the narrowest known prefix.
+- Zero-byte files count toward the object total; directory-marker keys ending in
+  `/` do not. Stored byte totals are not predicted output size or exact network transfer.
+
+Calendar ranges need no schema either:
+
+```bash
+python -m dredge --module ingest --mode s3 --action plan \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --prefix json/ --partition-date year,month,day \
+  --from 2026-10-22 --to 2026-10-23
+```
+
+Calendar ranges normalize padded/unpadded numeric components and use inclusive
+start/exclusive end dates. Missing components do not match; invalid dates fail
+explicitly. Equality predicates may further narrow a calendar range. Calendar
+filters describe folder dates, not record timestamps, and take no timezone option.
+
+Refresh a saved plan without a schema, then download using an ingestion-ready schema:
+
+```bash
+python -m dredge --module ingest --mode s3 --action get \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --plan artifacts/october-source.plan.yml --dry-run
+
+python -m dredge --module ingest --mode s3 --action get \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --plan artifacts/october-source.plan.yml \
+  --schema artifacts/admu-canvas-data.schema.yml --output datasets/october
+```
+
+Add `--schema` to dry-run to check compatibility before downloading. With a schema,
+reports distinguish selected, consumable, unmatched, and ambiguous objects, and
+show blockers for matching datasets. `--dataset ID` optionally restricts schema
+assignments; selected objects outside those datasets become unmatched. Actual
+ingestion rejects unmatched/ambiguous objects and blocked matching datasets before
+content reads. This also exposes unsupported and zero-byte files that existing
+schema selectors cannot consume. Narrow the prefix/partition selection or update
+the schema rather than silently dropping those objects.
+
+Version-2 plans store bucket, prefix, partition predicates, optional calendar range,
+and a timestamped estimate. They have no schema fingerprint or credentials and
+survive schema regeneration. New schema compatibility is checked at execution.
+Plans cannot be combined with selection overrides. Plan output paths must be new;
+actual dataset output paths must also be new and their parent must exist.
+
+Inventories refresh on every run. Downloads perform a streaming assignment
+preflight, then re-list for each matching dataset, checking assignments again.
+This bounds memory and detects newly unmatched objects; it does not provide a
+transactional S3 snapshot. Object identity checks remain in effect during reads.
+An empty source selection publishes a valid collection with no dataset entries.
+Applied selection plans appear in output manifests and the two-cell notebooks.
+
+## Optional schema-bound time plans
+
+The existing version-1 workflow below remains available for record-time filtering
+and old partition-date plans. It requires a schema and binds the saved plan to a
+single dataset. Record-time flags cannot be combined with the source-selection
+prefix/partition flags above.
+
+Inspect time fields and partition definitions in a schema without accessing S3:
+
+```bash
+python -m dredge --module ingest --mode s3 --action plan \
+  --bucket admu-canvas-data --schema artifacts/admu-canvas-data.schema.yml
+```
+
+The report lists dataset IDs and literal top-level date/timestamp field names.
+Version 1 supports these scalar fields; arbitrary strings, JSON-encoded values,
+nested paths, and array elements are not time-filter candidates.
+
+Create a saved plan for a partition date range (replace `DATASET_ID` with an ID
+from the report and choose the dates you need):
+
+```bash
+python -m dredge --module ingest --mode s3 --action plan \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --schema artifacts/admu-canvas-data.schema.yml --dataset DATASET_ID \
+  --partition-date year,month,day --from 2026-10-01 --to 2026-11-01 \
+  --output artifacts/october.plan.yml
+```
+
+This lists candidate objects and sums sizes for matching partition dates without
+reading object contents. Month/day values can be padded or unpadded. Invalid
+calendar dates fail explicitly. The partition names are supplied in year, month,
+day order; they must uniquely identify three partitions. Listing still traverses
+the manifest selector's prefix; filters never broaden the original selector.
+
+For record timestamps, replace `--partition-date year,month,day` with
+`--time-field metadata_event_time`. A folder's date is **not** assumed to equal
+its records' timestamps. Each plan chooses one filtering basis and one dataset.
+All ranges are **start inclusive, end exclusive**. Naive timestamps and bounds
+without offsets use `--timezone UTC` by default; override with an IANA timezone
+such as `Asia/Manila`. Explicit timestamp offsets are respected. Date fields use
+`YYYY-MM-DD` bounds. Timestamp bounds support up to six fractional digits; finer
+source timestamps retain their precision. Ambiguous/nonexistent local times
+fail instead of silently changing the range. Null timestamps do not match.
+
+For a Parquet record-time plan, optionally add `--inspect-parquet-metadata`.
+This permits footer range downloads (up to 16 MiB per file) to identify row groups
+whose min/max statistics cannot overlap the range. Missing/incompatible statistics
+retain the row group. Resolved/transformed filter fields do not support metadata
+pruning. The report shows selected row groups, compressed column-chunk sizes and
+metadata bytes fetched. Buffering, footers, and retries can add transferred bytes;
+the estimate is not an exact network bill. Small files may fit entirely in a
+footer range request. A full scan is still required for JSONL record-time filters,
+and listings alone cannot determine matching row counts.
+
+Refresh the plan's estimate, then download using exactly the same filter:
+
+```bash
+python -m dredge --module ingest --mode s3 --action get \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --schema artifacts/admu-canvas-data.schema.yml --plan artifacts/october.plan.yml \
+  --output datasets/october --dry-run
+
+python -m dredge --module ingest --mode s3 --action get \
+  --profile ateneo_research --region ap-northeast-2 --bucket admu-canvas-data \
+  --schema artifacts/admu-canvas-data.schema.yml --plan artifacts/october.plan.yml \
+  --output datasets/october
+```
+
+The output parent directory must exist. Plans and dataset destinations must be new
+paths. A plan binds to its bucket, dataset, executable schema, and source selector;
+changed bindings require creating a new plan. Plans store filter settings,
+timezone assumptions, and timestamped estimates, not credentials or a frozen
+object inventory. Each preview/download refreshes the inventory. A plan explicitly
+created with metadata inspection enables footer reads on subsequent dry-runs too;
+ordinary dry-runs and listings-only plans still make no object-content requests.
+
+Ingestion executes the same row-group selection and then applies exact record
+predicates while streaming. Existing schema validation still applies to scanned
+records, including records rejected by the time predicate. Output remains bounded
+Parquet shards; the output manifest records the plan, actual transfer count, and
+per-dataset scanned/filtered/written record counts. The two-cell notebook documents
+the applied plan. Local output size is unknown until ingestion completes.

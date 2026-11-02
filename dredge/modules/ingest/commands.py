@@ -17,14 +17,16 @@ class ReadDatasetRecords:
     the returned generator to release streams immediately.
     """
     def __init__(self, dataset, source, selection, *, max_files=None, max_records_per_file=None,
-                 max_bytes_per_file=None, on_object=None, on_resolution=None):
+                 max_bytes_per_file=None, on_object=None, on_resolution=None, predicate=None, inspect_metadata=False):
         self.dataset, self.source, self.selection = dataset, source, selection
         self.max_files, self.max_records = max_files, max_records_per_file
         self.max_bytes = max_bytes_per_file
         self.on_object = on_object
         self.on_resolution = on_resolution
+        self.predicate, self.inspect_metadata = predicate, inspect_metadata
 
     def execute(self):
+        self.records_scanned = self.records_filtered = 0
         contract = self.dataset['ingestion']
         if not contract['ready'] or contract.get('blockers'):
             raise UserError('Dataset is not ingestion-ready; resolve discovery blockers first.')
@@ -41,7 +43,8 @@ class ReadDatasetRecords:
             options = SimpleNamespace(sample_bytes=budget, read_buffer_bytes=1024 * 1024,
                                       encoding=parser.get('encoding', 'utf-8-sig'),
                                       csv_delimiter=parser.get('csv_delimiter', ','),
-                                      csv_header=parser.get('csv_header', 'present'))
+                                      csv_header=parser.get('csv_header', 'present'),
+                                      parquet_predicate=self.predicate if self.inspect_metadata else None)
             compression = 'gzip' if obj.key.lower().endswith('.gz') else 'none'
             raw = RangeReader(self.source, obj, budget)
             try:
@@ -50,7 +53,11 @@ class ReadDatasetRecords:
                         record = apply_resolutions(record, self.dataset.get('resolutions', []), self.on_resolution)
                         record = convert_record(record, self.dataset['schema'])
                         validate_record(record, self.dataset['schema'])
-                        yield DatasetRecord(obj.key, obj.etag, self.selection.partition_values(obj), record)
+                        self.records_scanned += 1
+                        if self.predicate is None or self.predicate.kind != 'record' or self.predicate.matches_record(record):
+                            yield DatasetRecord(obj.key, obj.etag, self.selection.partition_values(obj), record)
+                        else:
+                            self.records_filtered += 1
                         if self.max_records is not None and count >= self.max_records:
                             break
                 if self.on_object:
