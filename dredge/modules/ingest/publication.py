@@ -17,7 +17,7 @@ def validate_output(output):
 
 
 @contextmanager
-def staged_output(output):
+def staged_output(output, check_cancel=None):
     path = validate_output(output)
     # Exclusive sibling lock serializes dredge publishers for this destination.
     lock = path.parent / ('.' + path.name + '.ingest.lock')
@@ -34,6 +34,8 @@ def staged_output(output):
         with ExitStack() as staging_cleanup:
             staging_cleanup.callback(shutil.rmtree, stage)
             yield stage
+            if check_cancel:
+                check_cancel()
             validate_output(path)
             stage.rename(path)
             staging_cleanup.pop_all()

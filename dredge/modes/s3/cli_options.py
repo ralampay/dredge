@@ -4,8 +4,6 @@ from ...core.cli_options import CliOption
 
 OPTIONS = (
     CliOption(('--bucket',), {'help': 'S3 bucket name (not an s3:// URI).'}),
-    CliOption(('--profile',), {'help': 'AWS named profile; otherwise use SDK defaults.'}),
-    CliOption(('--region',), {'help': 'AWS region override.'}),
     CliOption(('--prefix',), {'help': 'Literal S3 prefix, recursively listed.'}),
 )
 

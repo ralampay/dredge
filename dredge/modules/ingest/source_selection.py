@@ -88,12 +88,15 @@ class AssignedSelection:
 
 
 class IngestSelectedObjects:
-    def __init__(self, manifest, source, datasets, selections, selection, plan, output, options, on_progress=None):
+    def __init__(self, manifest, source, datasets, selections, selection, plan, output, options, on_progress=None, check_cancel=None):
         self.manifest, self.source, self.datasets, self.selections = manifest, source, datasets, selections
         self.selection, self.plan, self.output, self.options = selection, plan, output, options
         self.on_progress = on_progress
+        self.check_cancel = check_cancel
 
     def execute(self):
+        if self.check_cancel:
+            self.check_cancel()
         self.options.validate()
         validate_output(self.output)
         self.plan.validate(self.manifest.document['source']['bucket'])
@@ -110,4 +113,5 @@ class IngestSelectedObjects:
         selections = [AssignedSelection(self.selection, self.selections, i, active)
                       for i in range(len(self.selections)) if i in active]
         return IngestDatasets(self.manifest, self.source, datasets, selections, self.output,
-                              self.options, self.on_progress, selection_plan=self.plan.document()).execute()
+                              self.options, self.on_progress, selection_plan=self.plan.document(),
+                              check_cancel=self.check_cancel).execute()

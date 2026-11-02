@@ -19,6 +19,11 @@ def validate_output(path, overwrite=False):
 
 def write_report(report, path, overwrite=False):
     SchemaManifest(report.document)
+    write_document(report.document, path, overwrite)
+
+
+def write_document(document, path, overwrite=False):
+    """Publish a YAML artifact after its owning workflow validates the contract."""
     path = Path(path)
     validate_output(path, overwrite)
     temporary = None
@@ -27,7 +32,7 @@ def write_report(report, path, overwrite=False):
                                          prefix=f".{path.name}.", suffix=".tmp", delete=False) as stream:
             temporary = Path(stream.name)
             # Convert tuples to plain YAML sequences using safe_dump's supported representation.
-            yaml.safe_dump(report.document, stream, sort_keys=False, allow_unicode=True)
+            yaml.safe_dump(document, stream, sort_keys=False, allow_unicode=True)
             stream.flush()
             os.fsync(stream.fileno())
         if overwrite:

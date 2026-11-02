@@ -192,7 +192,8 @@ def _open_records(raw, fmt, compression, options, metadata=None):
             if predicate is not None:
                 from .parquet_filter import select_row_groups
                 groups = list(select_row_groups(file, predicate).indices)
-            yield (record for batch in file.iter_batches(batch_size=1000, row_groups=groups)
+            # Python-backed range reads must stay on the signal-handling thread.
+            yield (record for batch in file.iter_batches(batch_size=1000, row_groups=groups, use_threads=False)
                    for record in batch.to_pylist())
             return
         buffered = stack.enter_context(io.BufferedReader(raw, buffer_size=getattr(options, 'read_buffer_bytes', 65536)))

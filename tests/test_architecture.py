@@ -66,7 +66,7 @@ from unittest.mock import patch
 
 class BlockProviders(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split(".")[0] in {"boto3", "botocore", "pyarrow", "ijson", "yaml"}:
+        if fullname.split(".")[0] in {"boto3", "botocore", "pyarrow", "ijson", "yaml", "sqlparse"}:
             raise AssertionError("Unexpected import: " + fullname)
 
 sys.meta_path.insert(0, BlockProviders())

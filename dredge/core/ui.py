@@ -63,3 +63,13 @@ def print_environment_report(report: EnvironmentReport, console: Console | None 
         table.add_row(Text(entry.name), Text(entry.display_value), Text(entry.source))
     console.print(table)
     console.print("Secret-looking keys are masked. <empty> is an empty string; <unset> has no value.")
+
+
+def announce_cancellation() -> None:
+    """Signal-handler notice: avoid re-entering Rich or buffered text writes."""
+    import os
+    try:
+        os.write(2, b'\nCancellation requested. Closing resources and cleaning up; please wait.\n')
+    except OSError:
+        # A closed stderr must not prevent cancellation.
+        pass

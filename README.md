@@ -980,3 +980,147 @@ records, including records rejected by the time predicate. Output remains bounde
 Parquet shards; the output manifest records the plan, actual transfer count, and
 per-dataset scanned/filtered/written record counts. The two-cell notebook documents
 the applied plan. Local output size is unknown until ingestion completes.
+
+## Cancel ingestion
+
+Press **Ctrl+C once** in the terminal running ingestion. Dredge displays
+`Cancellation requested. Closing resources and cleaning up; please wait.`, closes
+active readers/writers and the S3 client, and removes the unpublished staging
+output and destination lock. It then reports `Cancelled.` and exits with code 130.
+Further Ctrl+C presses during that cleanup are ignored so they do not strand
+partial output. Previously completed output directories are not removed.
+
+Parquet column reads through the Python S3 stream run on the main thread rather
+than Arrow worker threads, allowing Python to handle Ctrl+C during network reads.
+A native decoding/writing operation can still delay handling until it returns;
+shutdown is not guaranteed instantaneous. Single-threaded column reads may reduce
+parallelism. Ingestion currently does not resume partial runs.
+
+This behavior applies to newly started processes using the updated code; an
+already-running ingestion does not pick up code changes. Forced process termination
+or a filesystem cleanup error can still leave temporary files or locks.
+
+## Browse AWS Glue catalogs
+
+Glue discovery reads registered metadata; it does not crawl object contents.
+Use the account/profile and region containing your catalog:
+
+```bash
+python -m dredge --module discover --mode glue --action catalogs \
+  --profile ateneo_research --region ap-northeast-2
+
+python -m dredge --module discover --mode glue --action databases \
+  --profile ateneo_research --region ap-northeast-2 --catalog-id CATALOG_ID
+
+python -m dredge --module discover --mode glue --action tables \
+  --profile ateneo_research --region ap-northeast-2 \
+  --catalog-id CATALOG_ID --database DATABASE
+
+python -m dredge --module discover --mode glue --action describe \
+  --profile ateneo_research --region ap-northeast-2 \
+  --catalog-id CATALOG_ID --database DATABASE --table TABLE \
+  --output artifacts/table.glue.yml
+```
+
+`catalogs` includes the default catalog and nested catalogs visible in the chosen
+account/region. With `--catalog-id`, it enumerates that parent's hierarchy.
+For the other actions, omitting `--catalog-id` uses the default account catalog.
+All listing actions paginate. Fields belong to **tables** within databases;
+`describe` shows Glue column types, comments, partition keys, and storage location.
+Nested Glue types are retained as declared type strings. Views may have no S3
+location. Access depends on Glue and Lake Formation permissions.
+
+Every action renders a Rich report. Optional `--output` saves a new YAML file with
+`catalog_report_version: 1`, action, source context, timestamp, and metadata items.
+This report describes registered Glue metadata; it is not a sampled/validated S3
+schema manifest and is not accepted as `--schema` by S3 ingestion. Athena export
+uses the catalog directly, without requiring this file. Older boto3 installations
+without Glue `GetCatalogs` need an upgrade.
+
+## Export an Athena query as CSV
+
+Install the updated dependencies with `python -m pip install -r requirements.txt`.
+The additional `sqlparse` dependency classifies query statements before submission.
+The wrapper accepts one `SELECT` or `WITH ... SELECT` statement, supplied through
+exactly one of `--query` or `--query-file` (UTF-8). Athena performs SQL execution
+validation. DDL, INSERT, CTAS, UNLOAD, and multiple statements are outside this
+export action.
+
+```bash
+python -m dredge --module ingest --mode athena --action query \
+  --profile ateneo_research --region ap-northeast-2 \
+  --catalog AwsDataCatalog --database DATABASE --workgroup primary \
+  --query-file queries/export.sql \
+  --output artifacts/athena-export
+```
+
+For an inline query, replace `--query-file` with, for example:
+
+```bash
+--query 'SELECT * FROM "your_table" LIMIT 100'
+```
+
+Choose literals and types matching the table's Glue definition. A SQL row limit
+limits returned rows; it is not a source-byte scan estimate.
+
+`--catalog` is an **Athena catalog name**, defaulting to `AwsDataCatalog`; Glue's
+`--catalog-id` is a different identifier. Use the Athena registration name when
+querying another catalog. `--database` is required. `--workgroup` defaults to
+`primary`, and `--query-timeout` defaults to 1800 seconds. No workgroups, buckets,
+catalogs, or permissions are provisioned by this command.
+
+The exporter reads the existing workgroup configuration. It supports either:
+
+- Customer-owned S3 results: use the configured location, or supply
+  `--results-location s3://YOUR-RESULTS-BUCKET/prefix/` when the workgroup permits
+  an override. Enforced conflicting overrides are rejected. The actual location
+  returned by Athena is used to stream the completed CSV in bounded chunks.
+- Athena-managed results: omit `--results-location`. Results are fetched using
+  paginated `GetQueryResults` and written incrementally as CSV, with one header.
+
+The terminal shows the query ID, state, elapsed time, reported bytes scanned, and
+exported bytes. This action executes a query; it does not support `--dry-run`.
+Source-data access, workgroup, result retrieval, S3 and KMS permissions must be
+available as applicable. Athena query costs depend on the workgroup's billing
+configuration; the report exposes AWS's actual scan statistics rather than a cost
+prediction.
+
+The output directory must be new, and its parent must exist:
+
+```text
+athena-export/
+  data.csv
+  manifest.json
+  preview.ipynb
+```
+
+Publication is staged: unsuccessful exports remove unpublished local output.
+`manifest.json` uses `query_dataset_version: 1` and records SQL, execution ID,
+catalog/database/workgroup, returned column metadata, execution statistics, result
+location when available, CSV size and relative file paths. A streamed S3 export
+leaves its row count null instead of rereading the entire CSV just to count rows.
+Managed exports record the rows actually written. CSV empty values can represent
+SQL NULL or empty strings; CSV does not preserve SQL types. Duplicate headers
+are retained in the file and pandas may rename them.
+
+The notebook contains exactly one Markdown cell documenting columns and one code
+cell with a bounded preview:
+
+```python
+import pandas as pd
+
+df = pd.read_csv("data.csv", nrows=5)
+df
+```
+
+For larger processing, iterate `pd.read_csv("data.csv", chunksize=10000)`.
+The notebook is generated, not executed automatically.
+
+Ctrl+C and query-wait timeouts request `StopQueryExecution` for an active query
+and briefly poll for a terminal state before local cleanup. Cancellation exits
+with code 130; timeout/failure exits with code 1. If stopping cannot be confirmed,
+the terminal reports the query ID and that it may still be running. If submission
+was interrupted before a query ID arrived, check the workgroup's query history.
+A query already completed is not stopped when cancelling its local download.
+SDK request durations can extend the polling deadlines. Remote result files are
+left to Athena/workgroup or S3 lifecycle retention, including after local failures.

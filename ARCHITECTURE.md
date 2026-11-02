@@ -264,3 +264,47 @@ Only matching datasets are written; empty selections produce an empty collection
 The writer receives the source plan as provenance, with no new parsing responsibility.
 Source-plan execution accepts a newly generated schema without changing the plan;
 compatibility is checked against that schema at execution time.
+
+## Ingestion cancellation
+
+The ingestion composition boundary installs `core.cancellation.handle_interrupts`
+for one invocation and restores the previous SIGINT handler on exit. Imports and
+worker-thread callers do not change signal handlers. The first SIGINT records a
+sticky cancellation request, emits an injected notice, and raises KeyboardInterrupt
+to interrupt Python I/O. Subsequent SIGINT signals do not interrupt cleanup. The
+CLI retains its existing cancellation exit code 130.
+
+`IngestDatasets` and `IngestSelectedObjects` accept an optional `check_cancel`
+callback for programmatic cancellation and publication checks. Commands do not
+install handlers or print notices. `staged_output` checks cancellation before
+publishing, while existing context managers close clients/writers and remove
+staging/locks. Python-backed Parquet batches use `use_threads=False` so S3 callbacks
+run on the main signal-handling thread. Native operations may defer signal handling
+until they return; this does not introduce a hard shutdown deadline.
+
+## Glue discovery and Athena exports
+
+The `discover/glue` route uses catalog commands under `modules.discover.catalog`;
+`modes.glue` owns SDK pagination and normalization of catalogs, databases, tables,
+and field/partition metadata. Catalog reports have an independent version-1 YAML
+contract and do not claim sampled S3 schema validation. The shared atomic YAML
+writer accepts a document only after its owning workflow validates it.
+
+`ingest/athena/query` composes `ExportAthenaQuery` under `modules.ingest.query` with
+an injected `QueryRepository`. The command owns submission, polling, timeout and
+remote cancellation. Separate components own bounded CSV transfer/serialization,
+manifest/notebook creation, typed requests, and Rich progress. SQL classification
+uses a lazily imported sqlparse dependency; Athena remains the execution validator.
+
+`modes.athena` owns workgroup enforcement, SDK calls, result locations, result-page
+normalization and S3 result-stream lifecycle. `modes.aws` supplies shared connection
+flags, explicit settings and client lifecycle for Glue/Athena. Provider modes do
+not import application modules. Routes remain lazy descriptors, with no provider
+branches added to the top-level CLI.
+
+Athena exports use the existing staged directory publication and invocation-scoped
+SIGINT handling. Active remote queries receive cancellation requests on local
+failure/cancellation; failure to confirm remote termination is reported rather
+than hidden. The CSV dataset contract is `query_dataset_version: 1`, independent
+of S3 Parquet collections. Its notebook reads only five CSV rows. No source schema
+file or local copy of the raw bucket is required to execute an Athena query.

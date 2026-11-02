@@ -10,3 +10,6 @@ PyYAML
 ijson
 # Parquet schemas, bounded record batches, and compressed dataset output.
 pyarrow
+
+# Classify single SELECT statements for Athena CSV exports.
+sqlparse>=0.5.3

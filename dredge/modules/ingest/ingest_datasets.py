@@ -21,12 +21,13 @@ class IngestDatasets:
     Schema-independent selection and assignment preflight are coordinated by
     IngestSelectedObjects before this writer receives its selectors.
     """
-    def __init__(self, manifest, source, datasets, selections, output, options=None, on_progress=None, plan=None, selection_plan=None):
+    def __init__(self, manifest, source, datasets, selections, output, options=None, on_progress=None, plan=None, selection_plan=None, check_cancel=None):
         self.manifest, self.source = manifest, source
         self.datasets, self.selections, self.output = datasets, selections, output
         self.options = options or IngestOptions()
         self.on_progress = on_progress
         self.plan, self.selection_plan = plan, selection_plan
+        self.check_cancel = check_cancel
         self.progress = IngestProgress()
 
     def _advance(self, **increments):
@@ -36,6 +37,8 @@ class IngestDatasets:
             self.on_progress(self.progress)
 
     def execute(self):
+        if self.check_cancel:
+            self.check_cancel()
         self.options.validate()
         if self.plan is not None and self.selection_plan is not None:
             raise UserError('Choose either a record-time plan or a source-selection plan.')
@@ -57,11 +60,13 @@ class IngestDatasets:
             document['source_plan'] = self.selection_plan
         counted = CountedSource(self.source, lambda size: self._advance(bytes_read=size))
         try:
-            with staged_output(self.output) as stage:
+            with staged_output(self.output, check_cancel=self.check_cancel) as stage:
                 for dataset, selection in pairs:
                     document['datasets'].append(self._write_dataset(stage, dataset, selection, counted))
                 document['execution'] = {'objects': self.progress.objects, 'records_written': self.progress.records,
                                          'bytes_read': self.progress.bytes_read}
+                if self.check_cancel:
+                    self.check_cancel()
                 write_manifests(stage, self.manifest.document, document)
         except OSError as exc:
             raise UserError('Cannot write ingestion output; check disk space and directory permissions.') from exc
@@ -79,6 +84,8 @@ class IngestDatasets:
             records = reader.execute()
             with closing(records):
                 for record in records:
+                    if self.check_cancel:
+                        self.check_cancel()
                     writer.append(record)
                     self._advance(records=1)
         write_notebook(directory / 'preview.ipynb', dataset, schema, partitions,
