@@ -1,6 +1,6 @@
 # Python CLI development conventions
 
-This repository is a minimal Python 3.10+ CLI template. Preserve the
+This repository is a modular Python 3.10+ CLI for data discovery and pipeline tasks. Preserve the
 `python -m dredge` entry point and keep application logic modular, portable,
 and usable without a terminal. If the package is renamed, apply these conventions
 to the new package name and update examples and documentation.
@@ -72,24 +72,44 @@ CLI / caller
 ```
 
 - `dredge/__main__.py`: only invoke `main()` and propagate its exit code.
-- `dredge/cli.py`: parse options, load configuration, construct dependencies,
-  dispatch commands, render results, and translate user-facing errors to exit codes.
+- `dredge/cli.py`: own the top-level lifecycle: parse, validate routes, load
+  configuration once, invoke the selected runner, and translate errors/results to
+  exit codes. Keep module-specific composition and presentation out of this file.
+- `dredge/cli_options.py`, `cli_config.py`, and `cli_routing.py`: declare global
+  options, normalize parsed inputs, and define immutable route descriptors with
+  lazy runner/option/validator references. Derive parser choices and dispatch from
+  descriptors; do not add module-specific dispatch branches to `cli.py`.
 - `dredge/core/`: cross-cutting infrastructure that is genuinely shared, such as
   configuration, exceptions, doctor reporting, and terminal UI. Do not put domain
   logic here merely to simplify imports.
-- `dredge/commands/`: focused application commands for a small application. Create
-  this package when the first application command needs it.
-- `dredge/features/<feature>/`: group related commands and feature-specific
-  components when a feature grows. Move its implementation here rather than
-  maintaining duplicate implementations under `commands/`.
+- `dredge/modules/<module>/`: own application workflows such as discovery and
+  future ingestion. Keep commands, typed requests/results, readers, serialization,
+  CLI option inventories, thin runners, and presentation near their workflow.
+- `dredge/modes/<mode>/`: own source integration such as S3. Keep mode-specific
+  flags, typed connection settings, client construction/lifecycle, and adapters
+  here so multiple modules can reuse them. Modes must not import modules.
+- `dredge/core/sources.py`: neutral object-source contracts consumed by commands
+  and mode adapters. Core contracts must not import concrete integrations.
+- `dredge/formats/`: shared parsing and type/schema adapters used by discovery
+  and ingestion; do not import application modules or source modes here.
+- `dredge/core/schema_manifest.py` and `core/partitioning.py`: shared artifact
+  validation and partition-selection semantics.
+- `dredge/features/discover/`: compatibility re-exports only. Do not add business
+  logic here or make canonical code depend on compatibility modules.
 - `tests/`: portable tests of public behavior using temporary data and injected
   collaborators.
 
-Within a feature, use modules named by responsibility: `commands.py` for small
+Within an application module, use files named by responsibility: `commands.py` for small
 related commands, a dedicated verb-named module for a larger command,
-`presentation.py` for rendering, and `repositories.py` or `adapters.py` for external
-integration. Create only modules needed by current behavior. Add `__init__.py` to
+`presentation.py` for rendering, `requests.py` for typed inputs, and `models.py`
+for structured results. Source integrations belong in the appropriate mode;
+other workflow-specific integrations can stay near their owning module. Create only modules needed by current behavior. Add `__init__.py` to
 new packages and use relative imports within the application.
+
+Follow [ARCHITECTURE.md](ARCHITECTURE.md) for the canonical module/mode boundaries.
+Declare CLI flags once using `CliOption` inventories. Importing options, routing,
+or runners must not initialize provider clients or load heavyweight readers.
+Preserve compatibility re-exports when moving documented Python APIs.
 
 Keep any `runner.py` thin: normalize parsed inputs, construct collaborators, select
 a command, invoke it, and forward its result to presentation. Do not put business
@@ -119,7 +139,7 @@ presentation modules. Avoid circular imports and generic utility containers.
 ## Presentation and errors
 
 - Reuse `core.ui` for shared output, prompts, confirmations, and progress displays.
-  Feature-specific rendering belongs with its feature.
+  Module-specific rendering belongs in its presentation module.
 - Render user/configuration strings literally; do not interpret them as Rich markup.
 - Raise `UserError` for actionable input, configuration, or runtime failures.
   Raise `UserAbort` for intentional interactive cancellation.

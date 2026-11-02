@@ -2,3 +2,11 @@
 rich
 # Read .env configuration.
 python-dotenv
+# AWS object listing and bounded reads.
+boto3
+# Portable schema reports.
+PyYAML
+# Streaming JSON arrays without loading entire objects.
+ijson
+# Parquet schema metadata and logical types.
+pyarrow

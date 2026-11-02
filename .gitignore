@@ -49,3 +49,6 @@ htmlcov/
 ._*
 Thumbs.db
 Desktop.ini
+
+# Local discovery reports and live validation artifacts
+artifacts/
