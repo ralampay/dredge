@@ -13,3 +13,11 @@ pyarrow
 
 # Classify single SELECT statements for Athena CSV exports.
 sqlparse>=0.5.3
+
+# Official Sentinel-1 catalog search and authenticated downloads.
+asf_search>=11,<12
+# Generic geometry, projected grids, and windowed GeoTIFF operations.
+shapely>=2,<3
+pyproj>=3.4,<4
+rasterio>=1.4,<2
+numpy>=1.24

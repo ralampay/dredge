@@ -1,0 +1,1 @@
+"""Geographically independent imagery capabilities."""

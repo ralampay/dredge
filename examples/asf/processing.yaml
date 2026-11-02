@@ -1,0 +1,25 @@
+# Choose a projected CRS suitable for YOUR input bounds before running.
+version: 1
+rtc:
+  enabled: true
+  resolution: 30
+  radiometry: gamma0
+  timeout_seconds: 1800
+  poll_seconds: 30
+  max_extract_bytes: 53687091200
+reference_grid:
+  crs: REPLACE_WITH_SUITABLE_PROJECTED_CRS
+  resolution_m: 30
+  resampling: bilinear
+  nodata: -9999
+  max_pixels: 100000000
+normalization:
+  input_units: power
+  output_units: db
+tiling:
+  enabled: true
+  tile_size: 640
+  overlap: 0.20
+  preserve_georeferencing: true
+  include_empty_tiles: true
+classes: {}

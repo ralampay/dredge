@@ -308,3 +308,24 @@ failure/cancellation; failure to confirm remote termination is reported rather
 than hidden. The CSV dataset contract is `query_dataset_version: 1`, independent
 of S3 Parquet collections. Its notebook reads only five CSV rows. No source schema
 file or local copy of the raw bucket is required to execute an Athena query.
+
+## ASF imagery ingestion
+
+`ingest/asf/get` composes provider-neutral `core.imagery` scene/query values with
+`modes.asf` catalog/download adapters and `modules.ingest.imagery` commands.
+`PreviewScenes.execute()` performs catalog-only discovery; `IngestScenes.execute()`
+coordinates resumable raw downloads and an optional injected `ProcessScenes`.
+Modes never import application modules. HyP3 service access lives in `modes.hyp3`;
+job lifecycle, authorization and provenance belong to the imagery workflow.
+
+`formats.raster` owns reusable geometry, projected grids, Rasterio alignment,
+explicit backscatter-unit conversion and generic tiling. It imports no source
+providers or application modules. No named geographic area influences code,
+configuration defaults or tests. Example study areas are documentation only.
+
+Imagery uses an independent versioned manifest and a locked, resumable publication
+component. Files and manifests publish atomically; completed artifacts survive
+failures. This does not change S3's fresh-directory, staged-run contract. Shared
+transfer option inventories declare preview and error/overwrite flags once while
+routes retain their own validation and publication semantics. Routing, options,
+and runner imports remain free of SDK and geospatial initialization.

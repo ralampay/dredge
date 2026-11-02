@@ -1,0 +1,2 @@
+# Optional explicitly authorized SAR terrain correction service.
+hyp3-sdk>=7,<8

@@ -13,7 +13,6 @@ OPTIONS = (
     CliOption(('--timezone',), {'help': 'IANA timezone for naive timestamps (default: UTC).'}),
     CliOption(('--inspect-parquet-metadata',), {'action': 'store_true',
               'help': 'Permit Parquet footer downloads for record-time planning and plan previews.'}),
-    CliOption(('--dry-run',), {'action': 'store_true', 'help': 'Preview source sizes without writing output; saved plans may explicitly enable footer reads.'}),
     CliOption(('--batch-rows',), {'type': positive, 'help': 'Maximum records per write batch (default: 10000).'}),
     CliOption(('--batch-bytes',), {'type': positive, 'help': 'Estimated record payload per batch (default: 16777216 bytes).'}),
     CliOption(('--file-bytes',), {'type': positive, 'help': 'Target uncompressed Arrow bytes per output file (default: 134217728).'}),

@@ -41,8 +41,6 @@ OPTIONS = (
     CliOption(('--csv-header',), {'choices': ('auto', 'present', 'absent'), 'help': 'CSV header policy (default: auto).'}),
     CliOption(('--temporal-types',), {'choices': ('auto', 'off'), 'help': 'Infer ISO date/time strings (default: auto).'}),
     CliOption(('--encoding',), {'type': encoding, 'help': 'Text encoding (default: utf-8-sig).'}),
-    CliOption(('--on-error',), {'choices': ('fail', 'continue'), 'help': 'Object error policy (default: fail).'}),
-    CliOption(('--overwrite',), {'action': 'store_true', 'help': 'Replace an existing regular report file.'}),
 )
 
 
