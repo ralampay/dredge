@@ -45,9 +45,9 @@ def confirm_action(message: str, default: bool = False, abort: bool = False) -> 
     return confirmed
 
 
-def create_progress() -> Progress:
+def create_progress(*columns, **options) -> Progress:
     """Return a progress display to use as a context manager."""
-    return Progress()
+    return Progress(*columns, **options)
 
 
 def print_environment_report(report: EnvironmentReport, console: Console | None = None) -> None:

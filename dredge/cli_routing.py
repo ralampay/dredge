@@ -20,10 +20,37 @@ ROUTES = (
         module="discover", mode="s3", actions=("crawl",),
         runner=".modules.discover.runner:run_discovery",
         option_inventories=(
+            ("Output", ".core.output_options:OPTIONS"),
             ("Schema discovery", ".modules.discover.cli_options:OPTIONS"),
+            ("Sampling", ".core.sampling_options:OPTIONS"),
             ("S3 source", ".modes.s3.cli_options:OPTIONS"),
         ),
         validators=(".modules.discover.cli_options:validate_options",
+                    ".modes.s3.cli_options:validate_options"),
+    ),
+    RouteDescriptor(
+        module="ingest", mode="s3", actions=("get",),
+        runner=".modules.ingest.runner:run_ingestion",
+        option_inventories=(
+            ("Output", ".core.output_options:OPTIONS"),
+            ("Dataset ingestion", ".modules.ingest.cli_options:OPTIONS"),
+            ("Schema input", ".core.schema_options:OPTIONS"),
+            ("S3 source", ".modes.s3.cli_options:OPTIONS"),
+        ),
+        validators=(".modules.ingest.cli_options:validate_options",
+                    ".modes.s3.cli_options:validate_options"),
+    ),
+    RouteDescriptor(
+        module="schema", mode="s3", actions=("resolve",),
+        runner=".modules.schema.runner:run_resolution",
+        option_inventories=(
+            ("Output", ".core.output_options:OPTIONS"),
+            ("Schema input", ".core.schema_options:OPTIONS"),
+            ("Schema resolution", ".modules.schema.cli_options:OPTIONS"),
+            ("Sampling", ".core.sampling_options:OPTIONS"),
+            ("S3 source", ".modes.s3.cli_options:OPTIONS"),
+        ),
+        validators=(".modules.schema.cli_options:validate_options",
                     ".modes.s3.cli_options:validate_options"),
     ),
 )
@@ -64,7 +91,7 @@ def validate_route(parser, config):
     supplied = {name for name, value in config.items() if value is not None and value is not False}
     if config.get("doctor"):
         if supplied != {"doctor"}:
-            parser.error("--doctor cannot be combined with crawl options")
+            parser.error("--doctor cannot be combined with workflow options")
         return None
     if not supplied:
         return None

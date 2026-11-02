@@ -16,18 +16,53 @@ def require(condition, message):
         raise UserError('Invalid schema manifest: ' + message)
 
 
-def schema_fingerprint(schema, parser):
-    return hashlib.sha256(json.dumps({'schema': schema, 'parser': parser}, sort_keys=True).encode()).hexdigest()
+def schema_fingerprint(schema, parser, version=2, resolutions=None):
+    def executable(node):
+        if isinstance(node, dict):
+            return {key: executable(value) for key, value in node.items() if key not in ('inference', 'source')}
+        if isinstance(node, list):
+            return [executable(value) for value in node]
+        return node
+    contract = executable(schema) if version >= 3 else schema
+    executable_contract = {'schema': contract, 'parser': parser}
+    if version == 4:
+        executable_contract['resolutions'] = resolutions or []
+    return hashlib.sha256(json.dumps(executable_contract, sort_keys=True).encode()).hexdigest()
 
 
-def validate_node(node, depth=0):
+def validate_node(node, depth=0, version=2):
     require(depth < 50 and isinstance(node, dict), 'invalid or overly deep field schema')
     require(isinstance(node.get('type'), str) and isinstance(node.get('nullable'), bool), 'field type/nullable required')
     allowed = {'name', 'type', 'nullable', 'fields', 'items', 'alternatives', 'precision', 'scale', 'unit', 'timezone', 'storage_type'}
+    if version >= 3:
+        allowed.update(('source', 'inference', 'input_format'))
     require(set(node) <= allowed, 'unknown field-schema attributes')
     for key in ('name', 'unit', 'storage_type'):
         require(key not in node or isinstance(node[key], str), 'invalid field ' + key)
     require(node.get('timezone') is None or isinstance(node['timezone'], str), 'invalid timezone')
+    if 'input_format' in node:
+        require((node['type'], node['input_format']) in (('date', 'iso-date'), ('timestamp', 'iso-timestamp-offset')),
+                'invalid temporal conversion rule')
+    if version >= 3 and 'inference' in node:
+        info = node['inference']
+        require(isinstance(info, dict) and info.get('origin') in ('sample-inference', 'parquet-metadata', 'format-contract'),
+                'invalid inference origin')
+        for key in ('present_count', 'null_count', 'missing_count'):
+            require(key not in info or type(info[key]) is int and info[key] >= 0, 'invalid evidence count')
+        if info['origin'] == 'parquet-metadata':
+            require(not any(key in info for key in ('present_count', 'null_count', 'missing_count', 'observed_types')),
+                    'metadata-only inference cannot claim sampled record counts')
+        else:
+            observed = info.get('observed_types')
+            require(isinstance(observed, dict) and all(isinstance(k, str) and type(v) is int and v >= 0 for k, v in observed.items()),
+                    'invalid observed type counts')
+            require(info.get('present_count') == sum(observed.values()) and info.get('null_count') == observed.get('null', 0),
+                    'inconsistent evidence counts')
+    if 'source' in node:
+        require(isinstance(node['source'], dict) and isinstance(node['source'].get('kind'), str)
+                and isinstance(node['source'].get('path'), str), 'invalid field source')
+        positions = node['source'].get('positions', [])
+        require(isinstance(positions, list) and all(type(p) is int and p >= 0 for p in positions), 'invalid source positions')
     if node['type'] == 'decimal':
         require(type(node.get('precision')) is int and node['precision'] > 0 and type(node.get('scale')) is int,
                 'decimal precision and scale required')
@@ -41,14 +76,14 @@ def validate_node(node, depth=0):
             require(isinstance(field, dict) and isinstance(field.get('name'), str), 'field name required')
             require(field['name'] not in names, 'duplicate field name')
             names.add(field['name'])
-            validate_node(field, depth + 1)
+            validate_node(field, depth + 1, version)
     elif node['type'] == 'list':
-        validate_node(node.get('items'), depth + 1)
+        validate_node(node.get('items'), depth + 1, version)
     elif node['type'] == 'union':
         require(isinstance(node.get('alternatives'), list) and len(node['alternatives']) > 1, 'invalid union')
         for alternative in node['alternatives']:
             require(isinstance(alternative, dict), 'invalid union alternative')
-            validate_node({**alternative, 'nullable': False}, depth + 1)
+            validate_node({**alternative, 'nullable': False}, depth + 1, version)
 
 
 def _validate_parser(parser):
@@ -92,8 +127,8 @@ def _validate_selector(selector, source, parser):
         require(partition.get('layout') in ('hive', 'YYYY/MM/DD', 'YYYY-MM-DD'), 'unknown partition layout')
 
 
-def _validate_dataset(dataset, source):
-    validate_node(dataset.get('schema'))
+def _validate_dataset(dataset, source, version):
+    validate_node(dataset.get('schema'), version=version)
     contract = dataset.get('ingestion')
     require(isinstance(contract, dict) and contract.get('adapter') == 's3-objects', 'unsupported source adapter')
     require(isinstance(contract.get('ready'), bool), 'readiness required')
@@ -118,13 +153,14 @@ def _validate_dataset(dataset, source):
                 pending.append(node['items'])
         require(dataset['schema']['type'] == 'struct' and bool(dataset['samples']) and not dataset.get('failures'),
                 'ready dataset lacks successful discovery evidence')
-    require(dataset.get('schema_fingerprint') == schema_fingerprint(dataset['schema'], parser), 'schema/parser fingerprint mismatch')
+    require(dataset.get('schema_fingerprint') == schema_fingerprint(dataset['schema'], parser, version, dataset.get('resolutions', [])), 'schema/parser fingerprint mismatch')
 
 
 class SchemaManifest:
     def __init__(self, document):
         require(isinstance(document, dict), 'document must be a mapping')
-        require(document.get('schema_version') == 2, 'requires schema_version 2; rerun discovery for legacy reports')
+        require(type(document.get('schema_version')) is int and document['schema_version'] in (2, 3, 4),
+                'requires schema_version 2, 3, or 4; rerun discovery for legacy reports')
         require(document.get('status') in ('complete', 'partial'), 'invalid completion status')
         source = document.get('source')
         require(isinstance(source, dict) and source.get('mode') == 's3' and isinstance(source.get('bucket'), str)
@@ -136,7 +172,13 @@ class SchemaManifest:
             require(isinstance(dataset, dict) and isinstance(dataset.get('id'), str), 'dataset id required')
             require(dataset['id'] not in ids, 'duplicate dataset id')
             ids.add(dataset['id'])
-            _validate_dataset(dataset, source)
+            _validate_dataset(dataset, source, document['schema_version'])
+        if document['schema_version'] == 4:
+            from .resolution_contract import validate_resolution_document
+            validate_resolution_document(document)
+        else:
+            require('resolution' not in document and all('resolutions' not in d for d in document['datasets']),
+                    'resolution rules require a validated version-4 contract')
         self.document = deepcopy(document)
 
     @classmethod

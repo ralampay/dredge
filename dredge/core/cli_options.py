@@ -1,4 +1,5 @@
 """Immutable argument metadata; importing options never loads workflows."""
+import argparse
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -18,3 +19,14 @@ class CliOption:
 
     def add_to(self, parser, **overrides):
         parser.add_argument(*self.flags, **{**self.settings, **overrides})
+
+
+def positive(value):
+    """Shared argparse converter for positive integer limits."""
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError('must be a positive integer') from exc
+    if number <= 0:
+        raise argparse.ArgumentTypeError('must be a positive integer')
+    return number

@@ -63,7 +63,7 @@ class AccessLogTests(unittest.TestCase):
 
     def test_auto_discovery_and_declared_schema(self):
         report = crawl({KEY: (LOG + '\n').encode(), KEY + '.gz': gzip.compress((LOG + '\n').encode())})
-        self.assertEqual(report.document['schema_version'], 2)
+        self.assertEqual(report.document['schema_version'], 3)
         dataset = report.document['datasets'][0]
         self.assertEqual(dataset['format'], 's3-access-log')
         self.assertEqual(dataset['schema_origin'], 'format-contract')
@@ -81,7 +81,7 @@ class ManifestTests(unittest.TestCase):
             ({KEY: (LOG + '\n').encode()}, {}),
             ({'a.json': b'[{"id":1},{"id":2}]'}, {}),
             ({'a.jsonl.gz': gzip.compress(b'{"id":1}\n{"id":2}\n')}, {}),
-            ({'a.csv': b'id;name\n001;A\n002;B\n'}, {'csv_delimiter': ';'}),
+            ({'a.csv': b'id;name\n001;A\n002;B\n'}, {'csv_delimiter': ';', 'csv_header': 'present'}),
             ({'a.parquet': parquet.getvalue()}, {}),
         ]
         for data, options in fixtures:

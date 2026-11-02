@@ -20,8 +20,13 @@ def validate_record(value, node, path='$'):
         valid = isinstance(value, dict)
         if valid:
             known = {f['name'] for f in node['fields']}
-            if set(value) - known:
-                raise UserError(f'Schema drift at {path}: unexpected fields; rerun discovery.')
+            unexpected = set(value) - known
+            if unexpected:
+                names = ', '.join(repr(name) for name in sorted(unexpected, key=str)[:20])
+                if len(unexpected) > 20:
+                    names += f', ... ({len(unexpected)} total)'
+                raise UserError(f'Schema drift at {path}: unexpected fields: {names}; '
+                                'expand discovery sampling and regenerate the schema.')
             for field in node['fields']:
                 validate_record(value.get(field['name']), field, path + '/' + field['name'])
     elif kind == 'list':

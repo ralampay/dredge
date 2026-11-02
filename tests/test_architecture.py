@@ -86,7 +86,10 @@ with TemporaryDirectory() as directory:
             else:
                 raise AssertionError("Expected help exit")
 assert "dredge.modules.discover.runner" not in sys.modules
-assert callable(resolve_runner(ROUTES[0]))
+for route in ROUTES:
+    assert callable(resolve_runner(route))
+assert "dredge.modules.ingest.ingest_datasets" not in sys.modules
+assert "dredge.modules.schema.commands" not in sys.modules
 assert "dredge.modules.discover.commands" not in sys.modules
 '''
         result = subprocess.run([sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True)
@@ -123,7 +126,7 @@ assert "dredge.modules.discover.commands" not in sys.modules
                     patch("dredge.modules.discover.presentation.present") as present:
                 report = run_discovery(config)
                 self.assertFalse(report.partial)
-                present.assert_called_once_with(report, config["output"])
+                present.assert_called_once_with(report, config["output"], field_limit=20)
             # A failed crawl must still release the source client's resources.
             config["overwrite"] = True
             with patch("boto3.Session") as session, \

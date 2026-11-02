@@ -18,7 +18,7 @@ def infer(value):
         kind = "string"
     elif isinstance(value, dict):
         return {"type": "struct", "nullable": False,
-                "fields": [{"name": k, **infer(v)} for k, v in sorted(value.items())]}
+                "fields": [{"name": k, **infer(v)} for k, v in value.items()]}
     elif isinstance(value, list):
         item = {"type": "unknown", "nullable": False}
         for element in value:
@@ -42,7 +42,7 @@ def merge(left, right):
         first = {f["name"]: {k: v for k, v in f.items() if k != "name"} for f in left["fields"]}
         second = {f["name"]: {k: v for k, v in f.items() if k != "name"} for f in right["fields"]}
         fields = []
-        for name in sorted(first.keys() | second.keys()):
+        for name in dict.fromkeys([*first, *second]):
             value = merge(first[name], second[name]) if name in first and name in second else {
                 **(first.get(name) or second[name]), "nullable": True}
             fields.append({"name": name, **value})
@@ -117,4 +117,4 @@ def arrow_schema(schema):
     def field(f):
         return {"name": f.name, **node(f.type, f.nullable)}
 
-    return {"type": "struct", "nullable": False, "fields": [field(f) for f in sorted(schema, key=lambda f: f.name)]}
+    return {"type": "struct", "nullable": False, "fields": [field(f) for f in schema]}

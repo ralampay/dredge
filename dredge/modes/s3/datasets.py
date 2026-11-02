@@ -13,6 +13,10 @@ class S3DatasetAdapter:
         if getattr(source, 'bucket', self.selector['bucket']) != self.selector['bucket']:
             raise UserError('Schema source bucket does not match the supplied S3 source.')
 
+    @property
+    def prefix(self):
+        return self.selector['prefix']
+
     def matches(self, obj):
         s = self.selector
         if not obj.size or obj.key.endswith('/') or not obj.key.startswith(s['prefix']):

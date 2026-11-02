@@ -8,5 +8,5 @@ boto3
 PyYAML
 # Streaming JSON arrays without loading entire objects.
 ijson
-# Parquet schema metadata and logical types.
+# Parquet schemas, bounded record batches, and compressed dataset output.
 pyarrow

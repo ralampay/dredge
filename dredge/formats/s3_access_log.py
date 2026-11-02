@@ -76,4 +76,4 @@ def access_log_schema():
         fields.append(node)
     fields.append({"name": "extra_fields", "type": "list", "nullable": False,
                    "items": {"type": "string", "nullable": False}})
-    return {"type": "struct", "nullable": False, "fields": sorted(fields, key=lambda f: f['name'])}
+    return {"type": "struct", "nullable": False, "fields": fields}

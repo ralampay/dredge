@@ -1,20 +1,9 @@
 """Read-only held-out validation of a manifest against source records."""
-import hashlib
 
 from ...core.exceptions import UserError
 from ...core.sources import SourceAccessError
+from ...core.sampling import sample_objects, SelectedObjects as _SelectedObjects
 from .commands import ReadDatasetRecords
-
-
-class _SelectedObjects:
-    def __init__(self, selection, objects):
-        self.selection, self.selected = selection, objects
-
-    def objects(self):
-        return iter(self.selected)
-
-    def partition_values(self, obj):
-        return self.selection.partition_values(obj)
 
 
 class ValidateDatasetRecords:
@@ -29,17 +18,9 @@ class ValidateDatasetRecords:
         if not self.dataset['ingestion']['ready']:
             raise UserError('Dataset is not ingestion-ready; resolve discovery blockers first.')
         discovered = {sample['key'] for sample in self.dataset['samples']}
-        candidates, matched, eligible = [], 0, 0
-        for obj in self.selection.objects():
-            matched += 1
-            if obj.key in discovered:
-                continue
-            eligible += 1
-            candidates.append((hashlib.sha256(('validate:' + obj.key).encode()).hexdigest(), obj))
-            candidates.sort(key=lambda item: item[0])
-            del candidates[self.sample_files:]
+        candidates, matched, eligible = sample_objects(self.selection, discovered, self.sample_files)
         results = []
-        for _, obj in candidates:
+        for obj in candidates:
             count, error = 0, None
             try:
                 command = ReadDatasetRecords(self.dataset, self.source, _SelectedObjects(self.selection, [obj]),

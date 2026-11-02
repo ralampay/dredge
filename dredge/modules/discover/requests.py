@@ -17,7 +17,8 @@ class CrawlOptions:
     sample_records: int = 1000
     sample_bytes: int = 8 * 1024 * 1024
     csv_delimiter: str = ","
-    csv_header: str = "present"
+    csv_header: str = "auto"
+    temporal_types: str = "auto"
     encoding: str = "utf-8-sig"
     on_error: str = "fail"
 
@@ -37,3 +38,20 @@ class CrawlRequest:
             if name in values:
                 values[name] = tuple(values[name])
         return cls(CrawlOptions(**values), config["output"], config.get("overwrite", False))
+
+
+@dataclass(frozen=True)
+class CrawlResolutionRequest:
+    crawl: CrawlRequest
+    rules_path: str | None
+    discovery_output: str | None = None
+    sample_files: int = 50
+    sample_records: int = 1000
+    sample_bytes: int = 8 * 1024 * 1024
+    unresolved_as: str | None = None
+
+    @classmethod
+    def from_config(cls, config):
+        return cls(CrawlRequest.from_config(config), config.get('resolve_with'), config.get('discovery_output'),
+                   config.get('resolve_sample_files', 50), config.get('resolve_sample_records', 1000),
+                   config.get('resolve_sample_bytes', 8 * 1024 * 1024), config.get('unresolved_as'))

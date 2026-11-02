@@ -4,6 +4,7 @@ import csv
 import gzip
 import io
 import json
+from itertools import chain, islice
 import zlib
 from contextlib import ExitStack, contextmanager
 
@@ -126,7 +127,7 @@ def json_records(stream):
                 return
 
 
-def text_records(stream, fmt, options):
+def text_records(stream, fmt, options, metadata=None):
     if fmt == "s3-access-log":
         from .s3_access_log import parse_record
         for line in stream:
@@ -140,18 +141,35 @@ def text_records(stream, fmt, options):
                     raise ValueError("JSON Lines records must be objects")
                 yield value
     else:
-        rows = csv.reader(stream, delimiter=options.csv_delimiter, strict=True)
+        from .csv_headers import detect_header
+        metadata = metadata if metadata is not None else {}
+        rows = (row for row in csv.reader(stream, delimiter=options.csv_delimiter, strict=True) if row)
+        policy = options.csv_header
+        if policy == 'auto':
+            lookahead, limited = [], False
+            try:
+                for row in islice(rows, min(20, getattr(options, 'sample_records', 1000) + 1)):
+                    lookahead.append(row)
+            except SampleLimit:
+                limited = True
+            policy, ambiguous = detect_header(lookahead)
+            metadata.update(csv_header=policy, header_ambiguous=ambiguous)
+            def remainder(original=rows):
+                if limited:
+                    raise SampleLimit()
+                yield from original
+            rows = chain(lookahead, remainder())
+        else:
+            metadata.update(csv_header=policy, header_ambiguous=False)
         header = None
         for row in rows:
-            if not row:
-                continue
             if header is None:
-                if options.csv_header == "present":
-                    header = row
-                    if len(set(header)) != len(header) or any(not name for name in header):
-                        raise ValueError("CSV headers must be nonempty and unique")
+                header = row if policy == 'present' else [f"column_{i + 1}" for i in range(len(row))]
+                if len(set(header)) != len(header) or any(not name for name in header):
+                    raise ValueError("CSV headers must be nonempty and unique")
+                metadata['columns'] = list(header)
+                if policy == 'present':
                     continue
-                header = [f"column_{i + 1}" for i in range(len(row))]
             if len(row) != len(header):
                 raise ValueError("CSV row width differs from header")
             yield {name: csv_value(value) for name, value in zip(header, row)}
@@ -163,10 +181,10 @@ def invalid_constant():
 
 
 @contextmanager
-def _open_records(raw, fmt, compression, options):
+def _open_records(raw, fmt, compression, options, metadata=None):
     """Yield records with identical parser semantics for discovery and ingestion."""
     with ExitStack() as stack:
-        buffered = stack.enter_context(io.BufferedReader(raw, buffer_size=65536))
+        buffered = stack.enter_context(io.BufferedReader(raw, buffer_size=getattr(options, 'read_buffer_bytes', 65536)))
         if fmt == 'parquet':
             import pyarrow.parquet as pq
             file = stack.enter_context(pq.ParquetFile(buffered))
@@ -179,14 +197,14 @@ def _open_records(raw, fmt, compression, options):
             yield json_records(UTF8Reader(decoded, options.encoding))
         else:
             text = stack.enter_context(io.TextIOWrapper(decoded, encoding=options.encoding, newline=''))
-            yield text_records(text, fmt, options)
+            yield text_records(text, fmt, options, metadata)
 
 
 @contextmanager
-def open_records(raw, fmt, compression, options):
+def open_records(raw, fmt, compression, options, metadata=None):
     """Translate format failures at the shared content-adapter boundary."""
     try:
-        with _open_records(raw, fmt, compression, options) as records:
+        with _open_records(raw, fmt, compression, options, metadata) as records:
             yield records
     except (UnicodeError, ValueError, csv.Error, ijson.JSONError, EOFError, OSError, zlib.error) as exc:
         raise UserError(f"Cannot parse {raw.obj.key!r} as {fmt}; check its format, encoding, and parser settings.") from exc

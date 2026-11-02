@@ -57,7 +57,7 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_formats_and_encoding(self):
         for key, data, options in [
-            ("x.csv", b'id,label\n001,"a,b"\n002,hello\n', {}),
+            ("x.csv", b'id,label\n001,"a,b"\n002,hello\n', {"csv_header": "present"}),
             ("x.json", b'{"id":"001","label":"a,b"}', {}),
             ("x.ndjson", b'{"id":"001","label":"a,b"}\n', {}),
             ("x.jsonl.gz", gzip.compress(b'{"id":"001","label":"a,b"}\n'), {}),
@@ -74,7 +74,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(fields(report)["column_2"]["nullable"])
         for data in (b"x,x\n1,2\n", b"x,y\n1\n", b'x\n"unclosed'):
             with self.subTest(data=data), self.assertRaises(UserError):
-                crawl({"x.csv": data})
+                crawl({"x.csv": data}, csv_header="present")
 
     def test_date_and_hive_grouping(self):
         data = {"events/2026/11/02/a.json": b'{"a":1}',
@@ -172,7 +172,7 @@ class DiscoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "schema.yml"
             write_report(report, path)
-            self.assertEqual(yaml.safe_load(path.read_text())["schema_version"], 2)
+            self.assertEqual(yaml.safe_load(path.read_text())["schema_version"], 3)
             with self.assertRaises(UserError):
                 write_report(report, path)
             write_report(report, path, overwrite=True)
@@ -180,7 +180,7 @@ class DiscoveryTests(unittest.TestCase):
             with patch("yaml.safe_dump", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
                 write_report(report, path, overwrite=True)
             self.assertEqual(list(Path(directory).iterdir()), [path])
-            self.assertEqual(yaml.safe_load(path.read_text())["schema_version"], 2)
+            self.assertEqual(yaml.safe_load(path.read_text())["schema_version"], 3)
 
 
 class AdapterTests(unittest.TestCase):
@@ -253,7 +253,7 @@ class DiscoveryCliTests(unittest.TestCase):
             path = Path(directory) / "partial.yml"
             with patch("dredge.cli.load_environment"), patch("boto3.Session"), \
                     patch("dredge.modes.s3.adapters.S3Source", return_value=MemorySource({"x.json": b"bad"})), \
-                    patch("dredge.modules.discover.presentation.print_info"):
+                    patch("dredge.modules.discover.presentation.present"):
                 self.assertEqual(main(base + ["--output", str(path), "--on-error", "continue"]), 1)
                 self.assertEqual(yaml.safe_load(path.read_text())["status"], "partial")
             with patch("dredge.cli.load_environment", side_effect=KeyboardInterrupt), patch("dredge.cli.print_error"):
